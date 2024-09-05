@@ -27,10 +27,9 @@ from torch import optim
 from torch.utils.data import TensorDataset, DataLoader
 
 from c_rnn_gan import Generator, Discriminator
-import music_data_utils
 
-DATA_DIR = 'data'
-CKPT_DIR = 'models'
+DATA_DIR = '../../data'
+CKPT_DIR = '../../models'
 G_FN = 'c_rnn_gan_g.pth'
 D_FN = 'c_rnn_gan_d.pth'
 

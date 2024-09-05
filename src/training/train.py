@@ -27,8 +27,8 @@ from torch import optim
 from c_rnn_gan import Generator, Discriminator
 import music_data_utils
 
-DATA_DIR = 'data'
-CKPT_DIR = 'models'
+DATA_DIR = '../../data'
+CKPT_DIR = '../../models'
 COMPOSER = 'sonata-ish'
 
 G_FN = 'c_rnn_gan_g.pth'
@@ -87,6 +87,76 @@ class DLoss(nn.Module):
         return torch.mean(batch_loss)
 
 
+def run_training_vr(model, optimizer, criterion, dataLoader, num_batches, freeze_g=False, freeze_d=False):
+    num_features = dataLoader.num_features()
+    batch = dataLoader.get_random_batch(BATCH_SIZE)
+
+    model['g'].train()
+    model['d'].train()
+
+    loss = {}
+    g_loss_total = 0.0
+    d_loss_total = 0.0
+    num_corrects = 0
+
+    g_states = model['g'].init_hidden(BATCH_SIZE)
+    d_states = model['d'].init_hidden(BATCH_SIZE)
+
+    for i in range(num_batches):
+        if not freeze_g:
+            optimizer['g'].zero_grad()
+
+        z = torch.empty([BATCH_SIZE, MAX_SEQ_LEN, num_features]).uniform_()
+        batch = torch.from_numpy(batch)
+
+        g_feats, new_g_states = model['g'](z, g_states)
+
+        if isinstance(criterion['g'], GLoss):
+            d_logits_gen, _, new_d_states = model['d'](g_feats, d_states)
+            loss['g'] = criterion['g'](d_logits_gen)
+        else: # feature matching
+            # feed real and generated input to discriminator
+            _, d_feats_real, _ = model['d'](batch, d_states) # TODO update discriminator to accept this input
+            _, d_feats_gen, new_d_states = model['d'](g_feats, d_states)
+            loss['g'] = criterion['g'](d_feats_real, d_feats_gen)
+
+        if not freeze_g:
+            loss['g'].backward()
+            nn.utils.clip_grad_norm_(model['g'].parameters(), max_norm=MAX_GRAD_NORM)
+            optimizer['g'].step()
+
+        if not freeze_d:
+            optimizer['d'].zero_grad()
+
+        # feed real and generated input to discriminator
+        d_logits_real, _, _ = model['d'](batch, d_states)
+        # need to detach from operation history to prevent backpropagating to generator
+        d_logits_gen, _, _ = model['d'](g_feats.detach(), d_states)
+        # calculate loss, backprop, and update weights of D
+        loss['d'] = criterion['d'](d_logits_real, d_logits_gen)
+        if not freeze_d:
+            loss['d'].backward()
+            nn.utils.clip_grad_norm_(model['d'].parameters(), max_norm=MAX_GRAD_NORM)
+            optimizer['d'].step()
+
+        g_loss_total += loss['g'].item()
+        d_loss_total += loss['d'].item()
+        num_corrects += (d_logits_real > 0.5).sum().item() + (d_logits_gen < 0.5).sum().item()
+
+        batch = dataLoader.get_new_batch(BATCH_SIZE)
+
+        g_states, d_states = new_g_states, new_d_states
+
+    g_loss_avg, d_loss_avg = 0.0, 0.0
+    d_acc = 0.0
+    num_sample = BATCH_SIZE * num_batches
+    if num_sample > 0:
+        g_loss_avg = g_loss_total / num_sample
+        d_loss_avg = d_loss_total / num_sample
+        d_acc = 100 * num_corrects / (2 * num_sample) # 2 because (real + generated)
+
+    return model, g_loss_avg, d_loss_avg, d_acc
+
 def run_training(model, optimizer, criterion, dataloader, freeze_g=False, freeze_d=False):
     ''' Run single training epoch
     '''
@@ -95,6 +165,7 @@ def run_training(model, optimizer, criterion, dataloader, freeze_g=False, freeze
     dataloader.rewind(part='train')
     batch_meta, batch_song = dataloader.get_batch(BATCH_SIZE, MAX_SEQ_LEN, part='train')
 
+    # Set models to training mode
     model['g'].train()
     model['d'].train()
 
@@ -193,7 +264,7 @@ def run_validation(model, criterion, dataloader):
 
         # initial states
         g_states = model['g'].init_hidden(real_batch_sz)
-        d_state = model['d'].init_hidden(real_batch_sz)
+        d_state = model[''].init_hidden(real_batch_sz)
 
         #### GENERATOR ####
         # prepare inputs

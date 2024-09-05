@@ -32,6 +32,7 @@ class Generator(nn.Module):
         self.use_cuda = use_cuda
         self.num_feats = num_feats
 
+        # Set the layers
         self.fc_layer1 = nn.Linear(in_features=(num_feats*2), out_features=hidden_units)
         self.lstm_cell1 = nn.LSTMCell(input_size=hidden_units, hidden_size=hidden_units)
         self.dropout = nn.Dropout(p=drop_prob)
@@ -39,10 +40,16 @@ class Generator(nn.Module):
         self.fc_layer2 = nn.Linear(in_features=hidden_units, out_features=num_feats)
 
     def forward(self, z, states):
-        ''' Forward prop
-        '''
+        """
+        Forward prop
+
+        Args:
+            z: Random noise tensor of shape (batch_size, seq_len, num_feats)
+            states: ((h1, c1), (h2, c2)) Initial states for the two LSTM cells
+        """
         if self.use_cuda:
             z = z.cuda()
+
         # z: (batch_size, seq_len, num_feats)
         # z here is the uniformly random vector
         batch_size, seq_len, num_feats = z.shape
