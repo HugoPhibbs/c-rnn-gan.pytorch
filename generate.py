@@ -22,7 +22,7 @@ from argparse import ArgumentParser
 import numpy as np
 import torch
 
-from c_rnn_gan.src.crgmodel import Generator
+from c_rnn_gan.src.CRG_model import Generator
 CKPT_DIR = 'models'
 G_FN = 'c_rnn_gan_g.pth'
 MAX_SEQ_LEN = 256

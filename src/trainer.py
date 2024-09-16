@@ -5,7 +5,7 @@ from torch import nn
 from torch.utils.data import DataLoader
 
 from c_rnn_gan.generate import CKPT_DIR
-from c_rnn_gan.src.crgmodel import CRGModel
+from c_rnn_gan.src.CRG_model import CRGModel
 from c_rnn_gan.src.loss import CRGLoss
 from c_rnn_gan.src.run_training import CRGOptimizer
 
@@ -97,7 +97,11 @@ class CRGTrainer:
         log_sum_real = 0.0
         log_sum_gen = 0.0
 
-        for i, (batch_data, batch_labels) in enumerate(self.data_loader):
+        for (batch_data, batch_labels) in self.data_loader:
+            for (k, v) in batch_data:
+                continue # TODO loop through the batch data, and refactor the below code to be in this loop
+
+
             # Reset the hidden states for each batch
             g_states = self.model.gen.init_hidden()
             d_states = self.model.disc.init_hidden()
@@ -122,6 +126,8 @@ class CRGTrainer:
             self.optimizer.disc.zero_grad()
 
             # feed real and generated input to discriminator
+            # TODO change how the batch_data is fed to the discriminator
+            # It seems there is a disconnect between how much data the discriminator is using, and how much the generator is using
             d_logits_real, _, _ = self.model.disc(batch_data, d_states)
             # need to detach from operation history to prevent backpropagating to generator
             d_logits_gen, _, _ = self.model.disc(g_feats.detach(), d_states)

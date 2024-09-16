@@ -25,7 +25,7 @@ import torch.nn as nn
 from torch import optim
 from torch.utils.data import DataLoader
 
-from c_rnn_gan.src.crgmodel import CRGModel, Generator, Discriminator
+from c_rnn_gan.src.CRG_model import CRGModel, Generator, Discriminator
 from c_rnn_gan.src.loss import CRGLoss, GLoss, DLoss
 from c_rnn_gan.src.optimizer import CRGOptimizer
 from c_rnn_gan.src.trainer import CRGTrainer

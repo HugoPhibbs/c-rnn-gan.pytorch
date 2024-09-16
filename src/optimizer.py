@@ -1,6 +1,6 @@
 from torch import optim
 
-from c_rnn_gan.src.crgmodel import CRGModel
+from c_rnn_gan.src.CRG_model import CRGModel
 
 G_LRN_RATE = 0.001
 D_LRN_RATE = 0.001
