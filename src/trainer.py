@@ -4,22 +4,15 @@ import torch
 from torch import nn
 from torch.utils.data import DataLoader
 
-from c_rnn_gan.generate import CKPT_DIR
-from c_rnn_gan.src.CRG_model import CRGModel
-from c_rnn_gan.src.loss import CRGLoss
-from c_rnn_gan.src.run_training import CRGOptimizer
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from c_rnn_gan.src.CRG_model import CRGModel
+    from c_rnn_gan.src.loss import CRGLoss
+    from c_rnn_gan.src.run_training import CRGOptimizer
 
 G_FN = 'c_rnn_gan_g.pth'
 D_FN = 'c_rnn_gan_d.pth'
-
-G_LRN_RATE = 0.001
-D_LRN_RATE = 0.001
-MAX_GRAD_NORM = 5.0
-# following values are modified at runtime
-MAX_SEQ_LEN = 200
-BATCH_SIZE = 32
-
-EPSILON = 1e-40  # value to use to approximate zero (to prevent undefined results)
 
 
 class CRGTrainer:
@@ -27,8 +20,9 @@ class CRGTrainer:
     Trainer class for C-RNN-GAN (CRG) model
     """
 
-    def __init__(self, model: CRGModel, data_loader: DataLoader, optimizer: CRGOptimizer, loss: CRGLoss,
-                 num_batches: int, num_epochs: int, num_features: int,
+    def __init__(self, model, data_loader, optimizer, loss,
+                 num_batches: int, num_epochs: int, num_features: int, batch_size: int, max_grad_norm: float,
+                 max_seq_length: int, model_save_path: str = None,
                  save_g=False,
                  save_d=False):
         self.model = model
@@ -41,6 +35,11 @@ class CRGTrainer:
 
         self.save_g = save_g
         self.save_d = save_d
+        self.model_save_path = model_save_path
+
+        self.batch_size = batch_size
+        self.max_grad_norm = max_grad_norm
+        self.max_seq_length = max_seq_length
 
     def run_training(self):
         """
@@ -56,12 +55,16 @@ class CRGTrainer:
         Saves the models if needed
         """
         if self.save_g:
-            torch.save(self.model.gen.state_dict(), os.path.join(CKPT_DIR, G_FN))
-            print("Saved generator: %s" % os.path.join(CKPT_DIR, G_FN))
+            g_path = os.path.join(self.model_save_path, G_FN)
+
+            torch.save(self.model.gen.state_dict(), g_path)
+            print(f"Saved generator: {g_path}")
 
         if self.save_d:
-            torch.save(self.model.disc.state_dict(), os.path.join(CKPT_DIR, D_FN))
-            print("Saved discriminator: %s" % os.path.join(CKPT_DIR, D_FN))
+            d_path = os.path.join(self.model_save_path, D_FN)
+
+            torch.save(self.model.disc.state_dict(), d_path)
+            print(f"Saved discriminator: {d_path}")
 
     def run_epoch(self, epoch_idx):
         """
@@ -97,26 +100,22 @@ class CRGTrainer:
         log_sum_real = 0.0
         log_sum_gen = 0.0
 
-        for (batch_data, batch_labels) in self.data_loader:
-            for (k, v) in batch_data:
-                continue # TODO loop through the batch data, and refactor the below code to be in this loop
-
-
+        for (batch_data, _) in self.data_loader:
             # Reset the hidden states for each batch
-            g_states = self.model.gen.init_hidden()
-            d_states = self.model.disc.init_hidden()
+            g_states = self.model.gen.init_hidden(self.batch_size)
+            d_states = self.model.disc.init_hidden(self.batch_size)
 
             ## Generator
 
             # Removed GLoss from loss, thought it wasn't needed for an MVP
 
             self.optimizer.gen.zero_grad()
-            z = torch.empty([MAX_SEQ_LEN, num_features]).uniform_()
+            z = torch.empty([self.batch_size, self.max_seq_length, num_features]).uniform_()
 
             g_feats, _ = self.model.gen(z, g_states)
             # feed real and generated input to discriminator
-            d_logits_gen, _, new_d_states = self.model.disc(g_feats, d_states)
-            loss_calculated['gen'] = self.model.gen(d_logits_gen)
+            d_logits_gen, _, _ = self.model.disc(g_feats, d_states)
+            loss_calculated['gen'] = self.loss.gen(d_logits_gen)
 
             loss_calculated['gen'].backward()
             self.optimizer.gen.step()
@@ -126,7 +125,6 @@ class CRGTrainer:
             self.optimizer.disc.zero_grad()
 
             # feed real and generated input to discriminator
-            # TODO change how the batch_data is fed to the discriminator
             # It seems there is a disconnect between how much data the discriminator is using, and how much the generator is using
             d_logits_real, _, _ = self.model.disc(batch_data, d_states)
             # need to detach from operation history to prevent backpropagating to generator
@@ -138,7 +136,7 @@ class CRGTrainer:
             log_sum_gen += d_logits_gen.sum().item()
 
             loss_calculated['disc'].backward()
-            nn.utils.clip_grad_norm_(self.model.disc.parameters(), max_norm=MAX_GRAD_NORM)
+            nn.utils.clip_grad_norm_(self.model.disc.parameters(), max_norm=self.max_grad_norm)
             self.optimizer.disc.step()
 
             g_loss_total += loss_calculated['gen'].item()
@@ -147,7 +145,7 @@ class CRGTrainer:
 
         g_loss_avg, d_loss_avg = 0.0, 0.0
         d_acc = 0.0
-        num_sample = BATCH_SIZE * self.num_batches
+        num_sample = self.batch_size * self.num_batches
 
         if num_sample > 0:
             g_loss_avg = g_loss_total / num_sample
