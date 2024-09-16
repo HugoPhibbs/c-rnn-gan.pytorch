@@ -1,13 +1,17 @@
 from torch import optim
 
-from c_rnn_gan.src.CRG_model import CRGModel
+from typing import TYPE_CHECKING
 
-G_LRN_RATE = 0.001
-D_LRN_RATE = 0.001
+if TYPE_CHECKING:
+    from c_rnn_gan.src.CRG_model import CRGModel
+
+from c_rnn_gan.src.training_constants import G_LRN_RATE_DEFAULT, D_LRN_RATE_DEFAULT
+
 
 class CRGOptimizer:
 
-    def __init__(self, model: CRGModel, gen_learn_rate=G_LRN_RATE, disc_learn_rate=D_LRN_RATE, use_sgd=True):
+    def __init__(self, model, gen_learn_rate=G_LRN_RATE_DEFAULT, disc_learn_rate=D_LRN_RATE_DEFAULT,
+                 use_sgd=True):
         self.use_sgd = use_sgd
 
         if self.use_sgd:
