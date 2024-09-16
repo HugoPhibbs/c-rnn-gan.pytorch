@@ -49,7 +49,7 @@ class Generator(nn.Module):
         Forward prop
 
         Args:
-            z: Random noise tensor of shape (seq_len, num_feats)
+            z: Random noise tensor of shape (batch_size, seq_len, num_feats)
             states: ((h1, c1), (h2, c2)) Initial states for the two LSTM cells
         """
         if self.use_cuda:
@@ -57,10 +57,14 @@ class Generator(nn.Module):
 
         # z: (seq_len, num_feats)
         # z here is the uniformly random vector
-        seq_len, num_feats = z.shape
+        batch_size, seq_len, num_feats = z.shape
+
+        # split to seq_len * (batch_size * num_feats)
+        z = torch.split(z, 1, dim=1)
+        z = [z_step.squeeze(dim=1) for z_step in z]
 
         # create dummy-previous-output for first timestep
-        prev_gen = torch.empty([num_feats]).uniform_()
+        prev_gen = torch.empty([batch_size, num_feats]).uniform_()
         if self.use_cuda:
             prev_gen = prev_gen.cuda()
 
@@ -87,21 +91,21 @@ class Generator(nn.Module):
         states = (state1, state2)
         return gen_feats, states
 
-    def init_hidden(self):
+    def init_hidden(self, batch_size):
         ''' Initialize hidden state '''
         # create NEW tensor with SAME TYPE as weight
         weight = next(self.parameters()).data
 
         if (self.use_cuda):
-            hidden = ((weight.new(1, self.hidden_dim).zero_().cuda(),
-                       weight.new(1, self.hidden_dim).zero_().cuda()),
-                      (weight.new(1, self.hidden_dim).zero_().cuda(),
-                       weight.new(1, self.hidden_dim).zero_().cuda()))
+            hidden = ((weight.new(batch_size, self.hidden_dim).zero_().cuda(),
+                       weight.new(batch_size, self.hidden_dim).zero_().cuda()),
+                      (weight.new(batch_size, self.hidden_dim).zero_().cuda(),
+                       weight.new(batch_size, self.hidden_dim).zero_().cuda()))
         else:
-            hidden = ((weight.new(1, self.hidden_dim).zero_(),
-                       weight.new(1, self.hidden_dim).zero_()),
-                      (weight.new(1, self.hidden_dim).zero_(),
-                       weight.new(1, self.hidden_dim).zero_()))
+            hidden = ((weight.new(batch_size, self.hidden_dim).zero_(),
+                       weight.new(batch_size, self.hidden_dim).zero_()),
+                      (weight.new(batch_size, self.hidden_dim).zero_(),
+                       weight.new(batch_size, self.hidden_dim).zero_()))
 
         return hidden
 
