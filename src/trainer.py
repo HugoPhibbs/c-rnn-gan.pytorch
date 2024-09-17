@@ -3,13 +3,15 @@ import os
 import torch
 from torch import nn
 from torch.utils.data import DataLoader
+from tqdm import tqdm
+import pandas as pd
 
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from c_rnn_gan.src.CRG_model import CRGModel
     from c_rnn_gan.src.loss import CRGLoss
-    from c_rnn_gan.src.run_training import CRGOptimizer
+    from c_rnn_gan.src.CRG_run import CRGOptimizer
 
 G_FN = 'c_rnn_gan_g.pth'
 D_FN = 'c_rnn_gan_d.pth'
@@ -22,7 +24,7 @@ class CRGTrainer:
 
     def __init__(self, model, data_loader, optimizer, loss,
                  num_batches: int, num_epochs: int, num_features: int, batch_size: int, max_grad_norm: float,
-                 max_seq_length: int, model_save_path: str = None,
+                 max_seq_length: int, model_save_path: str = None, per_nth_batch_print_memory: int = -1,
                  save_g=False,
                  save_d=False):
         self.model = model
@@ -41,11 +43,15 @@ class CRGTrainer:
         self.max_grad_norm = max_grad_norm
         self.max_seq_length = max_seq_length
 
+        self.per_nth_batch_print_memory = per_nth_batch_print_memory
+
+        self.train_data_df = pd.DataFrame(columns=['epoch', 'g_loss', 'd_loss', 'd_acc'])
+
     def run_training(self):
         """
         Runs the entire training process
         """
-        for ep in range(self.num_epochs):
+        for ep in tqdm(range(self.num_epochs), desc=f"Epoch Progress (Total: {self.num_epochs})"):
             _ = self.run_epoch(ep)
 
         self.save_models()
@@ -71,17 +77,19 @@ class CRGTrainer:
         Run a single training epoch
 
         """
-        trn_g_loss, trn_d_loss, trn_acc = self.run_epoch_helper()
+        trn_g_loss, trn_d_loss, trn_d_acc = self.run_epoch_helper(epoch_idx)
 
         # TODO: implement validation
 
         print("Epoch %d/%d " % (epoch_idx + 1, self.num_epochs))
 
-        print("\t[Training] G_loss: %0.8f, D_loss: %0.8f, D_acc: %0.2f\n", (trn_g_loss, trn_d_loss, trn_acc))
+        print("\t[Training] G_loss: %0.8f, D_loss: %0.8f, D_acc: %0.2f\n", (trn_g_loss, trn_d_loss, trn_d_acc))
 
-        return trn_acc
+        self.train_data_df[epoch_idx] = [epoch_idx, trn_g_loss, trn_d_loss, trn_d_acc]
 
-    def run_epoch_helper(self):
+        return trn_d_acc
+
+    def run_epoch_helper(self, epoch_idx):
         """
         Helper method for running an epoch
 
@@ -100,7 +108,12 @@ class CRGTrainer:
         log_sum_real = 0.0
         log_sum_gen = 0.0
 
-        for (batch_data, _) in self.data_loader:
+        for i, (batch_data, _) in enumerate(tqdm(self.data_loader, desc=f"Epoch {epoch_idx + 1}", leave=False)):
+            # if self.per_nth_batch_print_memory > 0 and i % self.per_nth_batch_print_memory == 0:
+            #     self.memory_summary()
+
+            # Batch_data has shape (batch_size, seq_len, num_features)
+
             # Reset the hidden states for each batch
             g_states = self.model.gen.init_hidden(self.batch_size)
             d_states = self.model.disc.init_hidden(self.batch_size)
@@ -155,3 +168,16 @@ class CRGTrainer:
             print("Trn: ", log_sum_real / num_sample, log_sum_gen / num_sample)
 
         return g_loss_avg, d_loss_avg, d_acc
+
+    def memory_summary(self):
+        """
+        Prints a summary of memory usage
+        """
+        assert torch.cuda.is_available(), "CUDA not available"
+
+        total_memory = torch.cuda.get_device_properties(0).total_memory / (1024 ** 2)  # Total memory in MB
+        allocated_memory = torch.cuda.memory_allocated() / (1024 ** 2)  # Allocated memory in MB
+
+        # Calculate percentage
+        percentage = (allocated_memory / total_memory) * 100
+        print(f"\nCUDA Memory Usage: {allocated_memory:.2f} MB / {total_memory:.2f} MB, {percentage:.2f}%")
