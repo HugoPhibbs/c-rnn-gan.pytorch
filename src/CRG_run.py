@@ -57,7 +57,7 @@ def main(args):
 
     training_constants = tc.TrainingConstants(g_learn_rate=args.g_learn_rate, d_learn_rate=args.d_learn_rate,
                                               batch_size=args.batch_size, eps=args.epsilon, seq_length=args.seq_len,
-                                              num_epochs=args.num_epochs, num_batches=args.num_batches,
+                                              num_epochs=args.num_epochs,
                                               g_hidden_units=args.g_hidden_units, d_hidden_units=args.d_hidden_units,
                                               g_drop_prob=args.g_drop_prob, d_drop_prob=args.d_drop_prob,
                                               max_grad_norm=args.max_grad_norm, max_seq_length=args.max_seq_length,
@@ -74,18 +74,20 @@ def main(args):
 
     num_features = dataset.num_features
 
+
+
     if args.subset_size > 0:
         subset_indices = list(range(0, args.subset_size - args.subset_size % args.batch_size))
         dataset = torch.utils.data.Subset(dataset, subset_indices)
 
-    data_loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True)
+    data_loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True, drop_last=True)
 
     crg = C_RNN_GAN.get_instance(num_features, gen_params, disc_params, optimizer_params, data_loader,
                                  num_epochs=args.num_epochs,
-                                 num_batches=args.num_batches,
                                  training_constants=training_constants,
                                  label_smoothing=args.label_smoothing,
-                                 use_cuda=use_cuda, )
+                                 use_cuda=use_cuda,
+                                 writer_path=args.writer_path)
 
     crg.train()
 
@@ -128,19 +130,20 @@ if __name__ == "__main__":
     arg_parser.add_argument('--label_smoothing', action='store_true', default=False)
     arg_parser.add_argument('--feature_matching', action='store_true', default=False)
 
-    arg_parser.add_argument("--num_batches", type=int, help="Number of batches to train on",
-                            default=tc.NUM_BATCHES_DEFAULT)
-
     # For data loading
     arg_parser.add_argument("--dataset_root", type=str, help="Root directory of dataset",
                             default=r"C:\Users\hugop\Documents\Uni\Graphics\COMPSCI715\datasets")
+
+    # For logs
+    arg_parser.add_argument("--writer_path", type=str, help="Path to save tensorboard logs",
+                            default=r"C:\Users\hugop\Documents\Uni\Graphics\COMPSCI715\c_rnn_gan\logs\experiment0")
 
     # For Single Game Training
     arg_parser.add_argument("--game_name", type=str, help="Game name to run training on", default='Barbie')
     arg_parser.add_argument("--train_session_set", type=str, help=".txt file path containing list of training sessions",
                             default=r"\barbie_demo_dataset\train.txt")
     arg_parser.add_argument("--cols_to_keep", type=str, help="Comma-separated list argument of columns to keep",
-                            default="hand_trigger_left,hand_trigger_right")
+                            default="hand_trigger_left,hand_trigger_right,thumbstick_left_x,thumbstick_left_y,thumbstick_right_x,thumbstick_right_y")
 
     args = arg_parser.parse_args()
 

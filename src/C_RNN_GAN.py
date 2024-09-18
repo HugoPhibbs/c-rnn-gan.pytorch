@@ -45,9 +45,9 @@ class C_RNN_GAN:
         return self.trainer.run_training()
 
     @staticmethod
-    def get_instance(num_feats, gen_params, disc_params, optimizer_params, data_loader, num_epochs, num_batches,
+    def get_instance(num_feats, gen_params, disc_params, optimizer_params, data_loader, num_epochs,
                      training_constants: tc.TrainingConstants,
-                     label_smoothing=False, use_cuda=False):
+                     label_smoothing=False, use_cuda=False, writer_path=None):
         generator = Generator(num_feats, gen_params["hidden_units"], gen_params["drop_prob"], use_cuda)
         discriminator = Discriminator(num_feats, disc_params["hidden_units"], disc_params["drop_prob"],
                                       use_cuda)
@@ -61,9 +61,11 @@ class C_RNN_GAN:
 
         loss = CRGLoss(GLoss(eps=training_constants.eps), DLoss(label_smoothing))
 
-        trainer = CRGTrainer(model, data_loader, optimizer, loss, num_batches, num_epochs, num_feats,
+        trainer = CRGTrainer(model, data_loader, optimizer, loss, num_epochs, num_feats,
                              training_constants.batch_size, training_constants.max_grad_norm,
-                             training_constants.max_seq_length, save_g=False, per_nth_batch_print_memory=training_constants.per_nth_batch_print_memory,
-                             save_d=False)
+                             training_constants.max_seq_length,
+                             seq_length=training_constants.seq_length,
+                             per_nth_batch_print_memory=training_constants.per_nth_batch_print_memory,
+                             writer_path=writer_path)
 
         return C_RNN_GAN(model, trainer, data_loader, optimizer, loss)

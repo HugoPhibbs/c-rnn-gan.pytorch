@@ -4,6 +4,8 @@ import torch
 from torch import nn
 from torch.utils.data import DataLoader
 from tqdm import tqdm
+from torch.utils.tensorboard import SummaryWriter
+
 import pandas as pd
 
 from typing import TYPE_CHECKING
@@ -22,14 +24,14 @@ class CRGTrainer:
     Trainer class for C-RNN-GAN (CRG) model
     """
 
-    def __init__(self, model, data_loader, optimizer, loss,
-                 num_batches: int, num_epochs: int, num_features: int, batch_size: int, max_grad_norm: float,
+    def __init__(self, model, data_loader: DataLoader, optimizer, loss, num_epochs: int, num_features: int,
+                 batch_size: int, max_grad_norm: float,
                  max_seq_length: int, model_save_path: str = None, per_nth_batch_print_memory: int = -1,
+                 writer_path: str = None, seq_length: int = 10,
                  save_g=False,
                  save_d=False):
         self.model = model
         self.data_loader = data_loader
-        self.num_batches = num_batches
         self.optimizer = optimizer
         self.loss = loss
         self.num_epochs = num_epochs
@@ -45,7 +47,10 @@ class CRGTrainer:
 
         self.per_nth_batch_print_memory = per_nth_batch_print_memory
 
-        self.train_data_df = pd.DataFrame(columns=['epoch', 'g_loss', 'd_loss', 'd_acc'])
+        self.seq_length = seq_length
+        # self.train_data_df = pd.DataFrame(columns=['epoch', 'g_loss', 'd_loss', 'd_acc'])
+
+        self.writer = SummaryWriter(writer_path)
 
     def run_training(self):
         """
@@ -83,9 +88,11 @@ class CRGTrainer:
 
         print("Epoch %d/%d " % (epoch_idx + 1, self.num_epochs))
 
-        print("\t[Training] G_loss: %0.8f, D_loss: %0.8f, D_acc: %0.2f\n", (trn_g_loss, trn_d_loss, trn_d_acc))
+        print(f"[Training] G_loss: {trn_g_loss:.8f} %, D_loss: {trn_d_loss:.8f}, D_acc: {trn_d_acc:.2f}\n")
 
-        self.train_data_df[epoch_idx] = [epoch_idx, trn_g_loss, trn_d_loss, trn_d_acc]
+        self.writer.add_scalar('Loss/g_loss', trn_g_loss, epoch_idx)
+        self.writer.add_scalar('Loss/d_loss', trn_d_loss, epoch_idx)
+        self.writer.add_scalar('Accuracy/d_acc', trn_d_acc, epoch_idx)
 
         return trn_d_acc
 
@@ -108,6 +115,8 @@ class CRGTrainer:
         log_sum_real = 0.0
         log_sum_gen = 0.0
 
+        num_batches = len(self.data_loader)
+
         for i, (batch_data, _) in enumerate(tqdm(self.data_loader, desc=f"Epoch {epoch_idx + 1}", leave=False)):
             # if self.per_nth_batch_print_memory > 0 and i % self.per_nth_batch_print_memory == 0:
             #     self.memory_summary()
@@ -123,7 +132,7 @@ class CRGTrainer:
             # Removed GLoss from loss, thought it wasn't needed for an MVP
 
             self.optimizer.gen.zero_grad()
-            z = torch.empty([self.batch_size, self.max_seq_length, num_features]).uniform_()
+            z = torch.empty([self.batch_size, self.seq_length, num_features]).uniform_()
 
             g_feats, _ = self.model.gen(z, g_states)
             # feed real and generated input to discriminator
@@ -131,6 +140,7 @@ class CRGTrainer:
             loss_calculated['gen'] = self.loss.gen(d_logits_gen)
 
             loss_calculated['gen'].backward()
+            nn.utils.clip_grad_norm_(self.model.gen.parameters(), max_norm=self.max_grad_norm)
             self.optimizer.gen.step()
 
             ## Discriminator
@@ -156,16 +166,19 @@ class CRGTrainer:
             d_loss_total += loss_calculated['disc'].item()
             num_corrects += (d_logits_real > 0.5).sum().item() + (d_logits_gen < 0.5).sum().item()
 
-        g_loss_avg, d_loss_avg = 0.0, 0.0
-        d_acc = 0.0
-        num_sample = self.batch_size * self.num_batches
+            if i % 100 == 0:
+                global_idx = num_batches * epoch_idx + i
+                self.writer.add_embedding(g_feats[-1], metadata=batch_data[-1], global_step=num_batches * epoch_idx + i,
+                                          tag=f'generator output {global_idx}')
 
-        if num_sample > 0:
-            g_loss_avg = g_loss_total / num_sample
-            d_loss_avg = d_loss_total / num_sample
-            d_acc = 100 * num_corrects / (2 * num_sample)  # 2 because (real + generated)
+        num_sample = self.batch_size * num_batches
+        assert num_sample > 0, "No samples taken from the dataset"
 
-            print("Trn: ", log_sum_real / num_sample, log_sum_gen / num_sample)
+        g_loss_avg = g_loss_total / num_batches
+        d_loss_avg = d_loss_total / num_batches
+        d_acc = 100 * num_corrects / (2 * num_sample)  # 2 because (real + generated)
+
+        print("Trn: ", log_sum_real / num_sample, log_sum_gen / num_sample)
 
         return g_loss_avg, d_loss_avg, d_acc
 
