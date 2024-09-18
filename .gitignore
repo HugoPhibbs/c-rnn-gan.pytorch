@@ -112,3 +112,5 @@ data/*
 !data/classical/
 data/classical/*
 !data/classical/mozart
+
+logs
