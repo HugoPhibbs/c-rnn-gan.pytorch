@@ -56,6 +56,9 @@ class CRGTrainer:
         """
         Runs the entire training process
         """
+        # self.writer.add_graph(self.model.gen, torch.empty([self.batch_size, self.seq_length, self.num_features]))
+        # self.writer.add_graph(self.model.disc, torch.empty([self.batch_size, self.seq_length, self.num_features]))
+
         for ep in tqdm(range(self.num_epochs), desc=f"Epoch Progress (Total: {self.num_epochs})"):
             _ = self.run_epoch(ep)
 

@@ -45,16 +45,27 @@ class Generator(nn.Module):
         self.num_feats = num_feats
 
         # Set the layers
-        self.fc_layer1a = nn.Linear(in_features=(num_feats * 2), out_features=hidden_units) # 2 for z and previous output
-        self.fc_layer1b = nn.Linear(in_features=hidden_units, out_features=hidden_units)
+        self.fc_layer1a = nn.Linear(in_features=(num_feats * 2),
+                                    out_features=3 * hidden_units)  # 2 for z and previous output
+        self.ln_f1a = nn.LayerNorm(3 * hidden_units)
+        self.fc_layer1b = nn.Linear(in_features=3 * hidden_units,
+                                    out_features=hidden_units)
+        self.ln_f1b = nn.LayerNorm(hidden_units)
+
         self.lstm_cell1 = nn.LSTMCell(input_size=hidden_units, hidden_size=hidden_units)
         self.ln1 = nn.LayerNorm(hidden_units)
+
         self.dropout = nn.Dropout(p=drop_prob)
+
         self.lstm_cell2 = nn.LSTMCell(input_size=hidden_units, hidden_size=hidden_units)
         self.ln2 = nn.LayerNorm(hidden_units)
-        self.fc_layer2a = nn.Linear(in_features=hidden_units, out_features=hidden_units)
-        self.fc_layer2b = nn.Linear(in_features=hidden_units, out_features=num_feats)
-        self.activation = TanhScaled(10)
+
+        self.fc_layer2a = nn.Linear(in_features=hidden_units, out_features=3 * hidden_units)
+        self.ln_f2a = nn.LayerNorm(3 * hidden_units)
+        self.fc_layer2b = nn.Linear(in_features=3 * hidden_units, out_features=num_feats)
+        self.ln_f2b = nn.LayerNorm(num_feats)
+
+        self.activation = TanhScaled(1)
 
         if use_cuda:
             self.cuda()
@@ -70,16 +81,24 @@ class Generator(nn.Module):
             state1: Hidden state for LSTM cell 1
             state2: Hidden state for LSTM cell 2
         """
-        out_1a = F.relu(self.fc_layer1a(input))
-        out_1b = F.relu(self.fc_layer1b(out_1a))
+        out_1a = self.ln_f1a(self.fc_layer1a(input))
+        out_1a =F.leaky_relu(out_1a, negative_slope=0.01)
+        out_1b = self.ln_f1b(self.fc_layer1b(out_1a))
+        out_1b = F.leaky_relu(out_1b, negative_slope=0.01)
+
         h1, c1 = self.lstm_cell1(out_1b, state1)
-        h1 = self.ln1(h1)
-        h1 = self.dropout(h1)  # feature dropout only (no recurrent dropout)
+        # h1 = self.ln1(h1)
+        # h1 = self.dropout(h1)  # feature dropout only (no recurrent dropout)
         h2, c2 = self.lstm_cell2(h1, state2)
-        h2 = self.ln2(h2)
-        out_f2a = F.relu(self.fc_layer2a(h2))
-        out_f2b = F.relu(self.fc_layer2b(out_f2a))
+        # h2 = self.ln2(h2)
+
+        out_f2a = self.ln_f2a(self.fc_layer2a(h2))
+        out_f2a = F.leaky_relu(out_f2a, negative_slope=0.01)
+        out_f2b = self.ln_f2b(self.fc_layer2b(out_f2a))
+        # out_f2b = F.leaky_relu(out_f2b, negative_slope=0.01)
+
         out = self.activation(out_f2b)
+
         return out, (h1, c1), (h2, c2)
 
     def forward(self, z, states):
@@ -102,7 +121,7 @@ class Generator(nn.Module):
         z = [z_step.squeeze(dim=1) for z_step in z]
 
         # create dummy-previous-output for first timestep
-        prev_gen = torch.empty([batch_size, num_feats]).uniform_()
+        prev_gen = torch.empty([batch_size, num_feats]).normal_()
         if self.use_cuda:
             prev_gen = prev_gen.cuda()
 
@@ -132,15 +151,15 @@ class Generator(nn.Module):
         weight = next(self.parameters()).data
 
         if (self.use_cuda):
-            hidden = ((weight.new(batch_size, self.hidden_dim).zero_().cuda(),
-                       weight.new(batch_size, self.hidden_dim).zero_().cuda()),
-                      (weight.new(batch_size, self.hidden_dim).zero_().cuda(),
-                       weight.new(batch_size, self.hidden_dim).zero_().cuda()))
+            hidden = ((weight.new(batch_size, self.hidden_dim).uniform_().cuda(),
+                       weight.new(batch_size, self.hidden_dim).uniform_().cuda()),
+                      (weight.new(batch_size, self.hidden_dim).uniform_().cuda(),
+                       weight.new(batch_size, self.hidden_dim).uniform_().cuda()))
         else:
-            hidden = ((weight.new(batch_size, self.hidden_dim).zero_(),
-                       weight.new(batch_size, self.hidden_dim).zero_()),
-                      (weight.new(batch_size, self.hidden_dim).zero_(),
-                       weight.new(batch_size, self.hidden_dim).zero_()))
+            hidden = ((weight.new(batch_size, self.hidden_dim).uniform_(),
+                       weight.new(batch_size, self.hidden_dim).uniform_()),
+                      (weight.new(batch_size, self.hidden_dim).uniform_(),
+                       weight.new(batch_size, self.hidden_dim).uniform_()))
 
         return hidden
 
@@ -181,6 +200,7 @@ class Discriminator(nn.Module):
         out = self.fc_layer(lstm_out)
         out = torch.sigmoid(out)
 
+        # Collapse to (batch_size, seq_len, 1) -> (batch_size, 1), care about per-sequence output
         num_dims = len(out.shape)
         reduction_dims = tuple(range(1, num_dims))
         # (batch_size)
@@ -197,14 +217,14 @@ class Discriminator(nn.Module):
 
         if self.use_cuda:
             hidden = (weight.new(self.num_layers * layer_mult, batch_size,
-                                 self.hidden_dim).zero_().cuda(),
+                                 self.hidden_dim).uniform_().cuda(),
                       weight.new(self.num_layers * layer_mult, batch_size,
-                                 self.hidden_dim).zero_().cuda())
+                                 self.hidden_dim).uniform_().cuda())
         else:
             hidden = (weight.new(self.num_layers * layer_mult, batch_size,
-                                 self.hidden_dim).zero_(),
+                                 self.hidden_dim).uniform_(),
                       weight.new(self.num_layers * layer_mult, batch_size,
-                                 self.hidden_dim).zero_())
+                                 self.hidden_dim).uniform_())
 
         return hidden
 

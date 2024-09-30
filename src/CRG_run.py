@@ -139,11 +139,11 @@ if __name__ == "__main__":
                             default=r"C:\Users\hugop\Documents\Uni\Graphics\COMPSCI715\c_rnn_gan\logs\experiment0")
 
     # For Single Game Training
-    arg_parser.add_argument("--game_name", type=str, help="Game name to run training on", default='Barbie')
+    arg_parser.add_argument("--game_name", type=str, help="Game name to run training on", default='Flight_Squad')
     arg_parser.add_argument("--train_session_set", type=str, help=".txt file path containing list of training sessions",
                             default=r"\barbie_demo_dataset\train.txt")
     arg_parser.add_argument("--cols_to_keep", type=str, help="Comma-separated list argument of columns to keep",
-                            default="hand_trigger_left,hand_trigger_right,thumbstick_left_x,thumbstick_left_y,thumbstick_right_x,thumbstick_right_y")
+                            default="thumbstick_left_x,thumbstick_left_y")
 
     args = arg_parser.parse_args()
 
