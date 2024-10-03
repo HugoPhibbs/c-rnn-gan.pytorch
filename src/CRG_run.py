@@ -65,7 +65,8 @@ def main(args):
 
     cols_to_keep = args.cols_to_keep.split(',') if args.cols_to_keep is not None else None
 
-    args.train_session_set = DataUtils.read_txt(f"{args.dataset_root}{args.train_session_set}")
+    if args.train_session_set is not None:
+        args.train_session_set = DataUtils.read_txt(f"{args.dataset_root}{args.train_session_set}")
 
     parquet_folder_path = f"{args.dataset_root}/parquet"
 
@@ -141,9 +142,9 @@ if __name__ == "__main__":
     # For Single Game Training
     arg_parser.add_argument("--game_name", type=str, help="Game name to run training on", default='Flight_Squad')
     arg_parser.add_argument("--train_session_set", type=str, help=".txt file path containing list of training sessions",
-                            default=r"\barbie_demo_dataset\train.txt")
+                            default=None)
     arg_parser.add_argument("--cols_to_keep", type=str, help="Comma-separated list argument of columns to keep",
-                            default="thumbstick_left_x,thumbstick_left_y")
+                            default="head_pos_x,head_pos_y")
 
     args = arg_parser.parse_args()
 

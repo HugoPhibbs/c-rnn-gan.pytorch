@@ -81,9 +81,9 @@ class Generator(nn.Module):
             state1: Hidden state for LSTM cell 1
             state2: Hidden state for LSTM cell 2
         """
-        out_1a = self.ln_f1a(self.fc_layer1a(input))
-        out_1a =F.leaky_relu(out_1a, negative_slope=0.01)
-        out_1b = self.ln_f1b(self.fc_layer1b(out_1a))
+        out_1a = self.fc_layer1a(input)
+        out_1a = F.leaky_relu(out_1a, negative_slope=0.01)
+        out_1b = self.fc_layer1b(out_1a)
         out_1b = F.leaky_relu(out_1b, negative_slope=0.01)
 
         h1, c1 = self.lstm_cell1(out_1b, state1)
@@ -92,9 +92,9 @@ class Generator(nn.Module):
         h2, c2 = self.lstm_cell2(h1, state2)
         # h2 = self.ln2(h2)
 
-        out_f2a = self.ln_f2a(self.fc_layer2a(h2))
+        out_f2a = self.fc_layer2a(h2)
         out_f2a = F.leaky_relu(out_f2a, negative_slope=0.01)
-        out_f2b = self.ln_f2b(self.fc_layer2b(out_f2a))
+        out_f2b = self.fc_layer2b(out_f2a)
         # out_f2b = F.leaky_relu(out_f2b, negative_slope=0.01)
 
         out = self.activation(out_f2b)

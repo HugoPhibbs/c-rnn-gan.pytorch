@@ -5,6 +5,7 @@ from torch import nn
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
+import numpy as np
 
 import pandas as pd
 
@@ -85,11 +86,11 @@ class CRGTrainer:
         Run a single training epoch
 
         """
+
+        print("Epoch %d/%d " % (epoch_idx + 1, self.num_epochs))
         trn_g_loss, trn_d_loss, trn_d_acc = self.run_epoch_helper(epoch_idx)
 
         # TODO: implement validation
-
-        print("Epoch %d/%d " % (epoch_idx + 1, self.num_epochs))
 
         print(f"[Training] G_loss: {trn_g_loss:.8f} %, D_loss: {trn_d_loss:.8f}, D_acc: {trn_d_acc:.2f}\n")
 
@@ -99,7 +100,7 @@ class CRGTrainer:
 
         return trn_d_acc
 
-    def run_epoch_helper(self, epoch_idx):
+    def run_epoch_helper(self, epoch_idx, start_training_disc_at=0):
         """
         Helper method for running an epoch
 
@@ -120,7 +121,9 @@ class CRGTrainer:
 
         num_batches = len(self.data_loader)
 
-        for i, (batch_data, _) in enumerate(tqdm(self.data_loader, desc=f"Epoch {epoch_idx + 1}", leave=False)):
+        progress_bar = tqdm(self.data_loader, desc=f"Epoch {epoch_idx + 1}", leave=False, dynamic_ncols=True)
+
+        for i, (batch_data, _) in enumerate(progress_bar):
             # if self.per_nth_batch_print_memory > 0 and i % self.per_nth_batch_print_memory == 0:
             #     self.memory_summary()
 
@@ -161,9 +164,10 @@ class CRGTrainer:
             log_sum_real += d_logits_real.sum().item()
             log_sum_gen += d_logits_gen.sum().item()
 
-            loss_calculated['disc'].backward()
-            nn.utils.clip_grad_norm_(self.model.disc.parameters(), max_norm=self.max_grad_norm)
-            self.optimizer.disc.step()
+            if i >= start_training_disc_at:
+                loss_calculated['disc'].backward()
+                nn.utils.clip_grad_norm_(self.model.disc.parameters(), max_norm=self.max_grad_norm)
+                self.optimizer.disc.step()
 
             g_loss_total += loss_calculated['gen'].item()
             d_loss_total += loss_calculated['disc'].item()
@@ -171,8 +175,9 @@ class CRGTrainer:
 
             if i % 100 == 0:
                 global_idx = num_batches * epoch_idx + i
-                self.writer.add_embedding(g_feats[-1], metadata=batch_data[-1], global_step=num_batches * epoch_idx + i,
-                                          tag=f'generator output {global_idx}')
+                np.save(f"gen_output_{global_idx}.npy", g_feats[-1].detach().cpu().numpy())
+
+            progress_bar.refresh()
 
         num_sample = self.batch_size * num_batches
         assert num_sample > 0, "No samples taken from the dataset"
